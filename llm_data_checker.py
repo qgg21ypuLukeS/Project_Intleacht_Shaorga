@@ -38,11 +38,10 @@ def read_df(input):
 def df_checker(data):
     #shape
     shape = data.shape
-
     #column names
     col_names = data.columns.tolist()
 
-    #Info as string
+    #info as string
     buffer = StringIO()
     data.info(buf=buffer)
     info = buffer.getvalue()
@@ -52,7 +51,7 @@ def df_checker(data):
     num_null = data.isna().sum()
 
     #correlation values
-    corr= data.corr(numeric_only=True)  # Pearson by default
+    corr= data.corr(numeric_only=True)  #Pearson by default
 
     #categorical columns
     cat_cols = data.select_dtypes(include='object').columns
