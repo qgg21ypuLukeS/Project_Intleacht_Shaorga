@@ -1,4 +1,4 @@
-def transform_dataframe(df):
+def {{function_name}}(df):
     df_out = df.copy()
     change_log = []
 
