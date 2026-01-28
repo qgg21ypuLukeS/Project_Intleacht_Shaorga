@@ -34,7 +34,7 @@ def read_df(input):
 #df checker 
 #(should check for empty data frames and do some basic data Anonymisation)
 ########################
-
+'''
 def df_checker(data):
     #shape
     shape = data.shape
@@ -50,8 +50,7 @@ def df_checker(data):
     per_null= data.isna().mean() * 100
     num_null = data.isna().sum()
 
-    #correlation values
-    corr= data.corr(numeric_only=True)  #Pearson by default
+
 
     #categorical columns
     cat_cols = data.select_dtypes(include='object').columns
@@ -66,14 +65,85 @@ def df_checker(data):
             "info": info,
             "percent_null": per_null,
             "num_null": num_null,
-            "correlation": corr,
             "unique_values": unique_val,
             "cat_value_counts": num_cat_vals,
             "cat_value_proportion": cat_col_proportion,
             "col_names": col_names
         }
+''' 
 
 
+
+
+from io import StringIO
+import pandas as pd
+import numpy as np
+
+
+def df_checker(data: pd.DataFrame) -> dict:
+    # --- basic shape / columns ---
+    shape = data.shape
+    col_names = data.columns.tolist()
+
+    # --- column type summary ---
+    dtype_counts = data.dtypes.value_counts().to_dict()
+    numeric_cols = data.select_dtypes(include="number").columns.tolist()
+    cat_cols = data.select_dtypes(include="object").columns.tolist()
+
+    # --- missing values (signals only) ---
+    per_null = data.isna().mean() * 100
+    cols_high_missing = per_null[per_null > 10].round(2).to_dict()
+    cols_no_missing = per_null[per_null == 0].index.tolist()
+
+    # --- categorical column signals ---
+    cat_summary = {}
+
+    for col in cat_cols:
+        nunique = data[col].nunique(dropna=True)
+        total = len(data[col])
+
+        top_freq = data[col].value_counts(normalize=True, dropna=True).iloc[0] if total > 0 else 0
+
+        cat_summary[col] = {
+            "unique_values": int(nunique),
+            "high_cardinality": bool(nunique > 50),
+            "low_cardinality": bool(nunique <= 10),
+            "top_value_proportion": round(float(top_freq), 3),
+        }
+
+    # --- numeric column signals ---
+    num_summary = {}
+
+    for col in numeric_cols:
+        series = data[col].dropna()
+        if series.empty:
+            continue
+
+        q1, q3 = series.quantile([0.25, 0.75])
+        iqr = q3 - q1
+
+        outlier_ratio = (
+            ((series < q1 - 1.5 * iqr) | (series > q3 + 1.5 * iqr)).mean()
+            if iqr > 0
+            else 0
+        )
+
+        num_summary[col] = {
+            "outlier_ratio": round(float(outlier_ratio), 3),
+            "skewed": bool(abs(series.skew()) > 1),
+        }
+
+    return {
+        "shape": shape,
+        "column_names": col_names,
+        "dtype_counts": dtype_counts,
+        "missing_values": {
+            "columns_high_missing_pct": cols_high_missing,
+            "columns_no_missing": cols_no_missing,
+        },
+        "categorical_summary": cat_summary,
+        "numeric_summary": num_summary,
+    }
 
 #anonymise data for security purposes
 #DO NOT SEND SENSITIVE DATA INTO AN LLM EVER! I AM NOT LIABLE IF YOU DO THAT!
