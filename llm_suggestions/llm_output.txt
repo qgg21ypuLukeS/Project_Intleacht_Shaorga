@@ -1,6 +1,8 @@
 ===== FUNC_TEST_SUITE =====
 # Instructions
 
+# Identity
+
 You are an expert python developer and a data analysis expert that helps generate suggested transformation code for a supplied pandas dataframe that is:
 - Pandas-native
 - Non-destructive by default
@@ -48,108 +50,104 @@ If any instruction conflicts with func_test_suite.txt, func_test_suite.txt MUST 
 # === APPEND NEW TRANSFORM FUNCTIONS BELOW ===
 
 
+def clean_company_name(df):
+    """
+    Standardize the 'Company Name' column:
+    - Strip leading/trailing whitespace (if any)
+    - Convert to title case for consistent capitalization
+    Returns a new DataFrame and a change log.
+    """
+    df_out = df.copy()
+    change_log = []
+
+    try:
+        # Strip whitespace and apply title case
+        df_out["Company Name"] = df_out["Company Name"].str.strip().str.title()
+        change_log.append("Standardized 'Company Name' to title case and stripped whitespace.")
+    except Exception as e:
+        change_log.append(f"Failed to clean 'Company Name': {e}")
+
+    return df_out, change_log
+
+
 def parse_salary_estimate(df):
     """
-    Parse the 'Salary Estimate' column to extract numeric minimum, maximum,
-    and average salary values. The original column is retained for reference.
+    Parse the free‑text 'Salary Estimate' column into three numeric columns:
+    - Salary Min: lower bound of the salary range
+    - Salary Max: upper bound of the salary range
+    - Salary Avg: average of the two bounds
+    Non‑numeric characters (currency symbols, commas, 'K', etc.) are removed.
+    Returns a new DataFrame and a change log.
     """
+    import re
+    import numpy as np
     df_out = df.copy()
     change_log = []
 
-    # Helper function to clean individual salary strings
-    def _extract_salary(s):
-        """
-        Extract min and max salary from a string like "$70K-$90K (Employer est.)".
-        Returns (min_salary, max_salary) as floats in thousands.
-        """
-        if not isinstance(s, str):
-            return (None, None)
-        # Remove any text in parentheses and whitespace
-        s_clean = s.split('(')[0].strip()
-        # Remove currency symbols and commas
-        s_clean = s_clean.replace('$', '').replace('K', '').replace(',', '')
-        # Split on hyphen
-        parts = s_clean.split('-')
-        if len(parts) == 2:
-            try:
-                min_sal = float(parts[0])
-                max_sal = float(parts[1])
-                return (min_sal, max_sal)
-            except ValueError:
-                return (None, None)
-        else:
-            # Single value case
-            try:
-                val = float(parts[0])
-                return (val, val)
-            except ValueError:
-                return (None, None)
+    def extract_numbers(s):
+        # Find all numeric groups (including those with commas)
+        nums = re.findall(r"[\d,.]+", str(s))
+        # Clean commas and convert to float
+        cleaned = [float(n.replace(",", "")) for n in nums if n.replace(",", "").replace(".", "", 1).isdigit()]
+        return cleaned
 
-    # Apply extraction
-    salary_vals = df_out['Salary Estimate'].apply(_extract_salary)
-    df_out['Salary_Min_K'] = salary_vals.apply(lambda x: x[0])
-    df_out['Salary_Max_K'] = salary_vals.apply(lambda x: x[1])
-    df_out['Salary_Avg_K'] = df_out[['Salary_Min_K', 'Salary_Max_K']].mean(axis=1)
+    try:
+        mins = []
+        maxs = []
+        avgs = []
 
-    change_log.append(
-        "Parsed 'Salary Estimate' into numeric columns: Salary_Min_K, Salary_Max_K, Salary_Avg_K."
-    )
+        for val in df_out["Salary Estimate"]:
+            numbers = extract_numbers(val)
+            if len(numbers) >= 2:
+                low, high = numbers[0], numbers[1]
+            elif len(numbers) == 1:
+                low = high = numbers[0]
+            else:
+                low = high = np.nan
+            mins.append(low)
+            maxs.append(high)
+            avgs.append(np.mean([low, high]) if not (np.isnan(low) or np.isnan(high)) else np.nan)
+
+        df_out["Salary Min"] = mins
+        df_out["Salary Max"] = maxs
+        df_out["Salary Avg"] = avgs
+
+        change_log.append("Extracted numeric salary bounds into 'Salary Min', 'Salary Max', and 'Salary Avg'.")
+    except Exception as e:
+        change_log.append(f"Failed to parse 'Salary Estimate': {e}")
 
     return df_out, change_log
 
 
-def clean_rating(df):
+def clean_founded_year(df):
     """
-    Ensure the 'Rating' column is numeric and cap values to a realistic range (0‑5).
-    Non‑numeric or out‑of‑range entries are set to NaN.
+    Validate and clean the 'Founded' year column:
+    - Convert to numeric (coerce errors to NaN)
+    - Replace years outside the realistic range [1800, current year] with NaN
+    Returns a new DataFrame and a change log.
     """
+    import numpy as np
+    import pandas as pd
+    from datetime import datetime
+
     df_out = df.copy()
     change_log = []
 
-    # Convert to numeric, coercing errors to NaN
-    df_out['Rating'] = pd.to_numeric(df_out['Rating'], errors='coerce')
+    try:
+        # Ensure numeric type
+        df_out["Founded"] = pd.to_numeric(df_out["Founded"], errors="coerce")
 
-    # Cap ratings between 0 and 5
-    before_invalid = df_out['Rating'].isna().sum()
-    df_out.loc[(df_out['Rating'] < 0) | (df_out['Rating'] > 5), 'Rating'] = pd.NA
+        current_year = datetime.now().year
+        mask_invalid = (df_out["Founded"] < 1800) | (df_out["Founded"] > current_year)
 
-    after_invalid = df_out['Rating'].isna().sum()
-    change_log.append(
-        f"Converted 'Rating' to numeric and capped to [0,5]; "
-        f"{after_invalid - before_invalid} values set to NaN."
-    )
+        num_invalid = mask_invalid.sum()
+        df_out.loc[mask_invalid, "Founded"] = np.nan
 
-    return df_out, change_log
-
-
-def compute_company_age(df, reference_year=None):
-    """
-    Create a 'Company_Age' column based on the 'Founded' year.
-    Handles unrealistic years and missing values.
-    """
-    df_out = df.copy()
-    change_log = []
-
-    # Determine reference year (current year if not provided)
-    if reference_year is None:
-        reference_year = pd.Timestamp.now().year
-
-    # Convert 'Founded' to numeric, coerce errors
-    df_out['Founded'] = pd.to_numeric(df_out['Founded'], errors='coerce')
-
-    # Identify unrealistic years (e.g., future years, very early years before 1800)
-    unrealistic_mask = (df_out['Founded'] > reference_year) | (df_out['Founded'] < 1800)
-    num_unrealistic = unrealistic_mask.sum()
-
-    # Set unrealistic years to NaN
-    df_out.loc[unrealistic_mask, 'Founded'] = pd.NA
-
-    # Compute age
-    df_out['Company_Age'] = reference_year - df_out['Founded']
-
-    change_log.append(
-        f"Created 'Company_Age' from 'Founded'; {num_unrealistic} unrealistic years set to NaN."
-    )
+        change_log.append(
+            f"Cleaned 'Founded' column: set {num_invalid} out‑of‑range values to NaN."
+        )
+    except Exception as e:
+        change_log.append(f"Failed to clean 'Founded' column: {e}")
 
     return df_out, change_log
 
@@ -160,19 +158,11 @@ def compute_company_age(df, reference_year=None):
 
 # === APPEND REASONING BELOW ===
 
-parse_salary_estimate:
-- The dataset contains a 'Salary Estimate' column with values like "$70K-$90K (Employer est.)".
-- For modeling and analysis we need numeric representations of salary.
-- The function extracts minimum and maximum salary (in thousands) and computes an average.
-- It retains the original column for reference and logs the transformation.
+clean_company_name
+- The dataset flagged the 'Company Name' column as having mixed case. Standardizing to title case improves consistency for downstream grouping or merging operations. Stripping whitespace (even though none were reported) is a safe defensive step.
 
-clean_rating:
-- 'Rating' should be a numeric field between 0 and 5 (typical Glassdoor rating scale).
-- The raw data may contain non‑numeric strings or out‑of‑range numbers.
-- The function coerces the column to numeric, caps values to the valid range, and records how many entries become NaN.
+parse_salary_estimate
+- 'Salary Estimate' is a free‑text field containing currency symbols, ranges, and parentheses. Converting it into explicit numeric columns ('Salary Min', 'Salary Max', 'Salary Avg') enables quantitative analysis (e.g., salary distribution, correlation with rating). The function uses a regex to pull numeric tokens, handles missing or single‑value cases, and logs any parsing failures.
 
-compute_company_age:
-- The 'Founded' column holds the year a company was established.
-- To use company age as a feature we compute the difference between the current year and the founded year.
-- The function handles missing or unrealistic years (future years, years before 1800) by setting them to NaN before calculating age.
-- It logs the number of corrected entries and adds a new 'Company_Age' column.
+clean_founded_year
+- The 'Founded' column contains years, but the numeric summary shows a high outlier ratio and skewness, indicating implausible values (e.g., future years or very early dates). This function coerces the column to numeric, then replaces any year outside the realistic window of 1800 to the current year with NaN, providing a clean, analyzable field. The number of corrected entries is recorded in the change log.
