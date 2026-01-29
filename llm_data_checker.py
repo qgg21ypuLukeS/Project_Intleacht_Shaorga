@@ -79,7 +79,6 @@ from io import StringIO
 import pandas as pd
 import numpy as np
 
-
 def df_checker(data: pd.DataFrame) -> dict:
     # --- basic shape / columns ---
     shape = data.shape
@@ -111,7 +110,7 @@ def df_checker(data: pd.DataFrame) -> dict:
             "top_value_proportion": round(float(top_freq), 3),
         }
 
-    # --- numeric column signals ---
+    #numeric column signals
     num_summary = {}
 
     for col in numeric_cols:
@@ -133,7 +132,7 @@ def df_checker(data: pd.DataFrame) -> dict:
             "skewed": bool(abs(series.skew()) > 1),
         }
 
-    # --- data quality issues ---
+    #quality issues
     potential_issues = {}
     for col in cat_cols:
         col_data = data[col].dropna().astype(str)
@@ -145,27 +144,46 @@ def df_checker(data: pd.DataFrame) -> dict:
             "mixed_case": bool(col_data.str.islower().any() and col_data.str.isupper().any())
         }
 
-    # --- numeric columns that might be categorical ---
+    #numeric columns that might be categorical
     numeric_potentially_categorical = [
         col for col in numeric_cols 
         if data[col].nunique() < 20
     ]
 
-    # --- potential date columns ---
+    # --- potential date columns
     potential_date_columns = [
         col for col in cat_cols
         if any(keyword in col.lower() for keyword in ['date', 'time', 'year', 'founded', 'created', 'updated'])
     ]
 
-    # --- duplicate rows ---
+    #duplicate rows check
     duplicate_info = {
         "count": int(data.duplicated().sum()),
         "percentage": round(float(data.duplicated().mean() * 100), 2)
     }
 
-    # --- example values (3 samples per column) ---
-    example_values = {
-        col: data[col].dropna().head(3).tolist()
+    #Helper function for pattern extraction
+    def get_value_pattern(val):
+        """Extract pattern info without exposing actual content"""
+        val_str = str(val)
+        
+        return {
+            "length": len(val_str),
+            "word_count": len(val_str.split()),
+            "has_digits": any(c.isdigit() for c in val_str),
+            "has_letters": any(c.isalpha() for c in val_str),
+            "has_special_chars": any(not c.isalnum() and not c.isspace() for c in val_str),
+            "all_caps": val_str.isupper() if val_str else False,
+            "title_case": val_str.istitle() if val_str else False,
+            "contains_currency": any(sym in val_str for sym in ['$', '€', '£', '¥']),
+            "contains_comma": ',' in val_str,
+            "contains_hyphen": '-' in val_str,
+            "contains_parentheses": '(' in val_str or ')' in val_str,
+        }
+
+    # --- example patterns (anonymized - no actual data exposed) ---
+    example_patterns = {
+        col: [get_value_pattern(v) for v in data[col].dropna().head(3)]
         for col in data.columns
     }
 
@@ -183,9 +201,8 @@ def df_checker(data: pd.DataFrame) -> dict:
         "numeric_potentially_categorical": numeric_potentially_categorical,
         "potential_date_columns": potential_date_columns,
         "duplicate_rows": duplicate_info,
-        "example_values": example_values,
+        "example_patterns": example_patterns, 
     }
-
 #anonymise data for security purposes
 #DO NOT SEND SENSITIVE DATA INTO AN LLM EVER! I AM NOT LIABLE IF YOU DO THAT!
 #WIP 

@@ -1,64 +1,178 @@
-def convert_salary_estimate_to_numeric(df):
+===== FUNC_TEST_SUITE =====
+# Instructions
+
+You are an expert python developer and a data analysis expert that helps generate suggested transformation code for a supplied pandas dataframe that is:
+- Pandas-native
+- Non-destructive by default
+- Human-readable and reviewable
+
+When analyzing datasets:
+1. First use pandas to inspect the actual data (df.head(), df.dtypes, df.describe())
+2. Check for ALL data quality issues (missing values, formatting, embedded data, ranges)
+3. Test your suggested transformations before proposing them
+4. Provide working, executable code with error handling
+
+The contents of func_test_suite.txt are the SINGLE authoritative source of truth.
+All other instructions are subordinate to it.
+If any instruction conflicts with func_test_suite.txt, func_test_suite.txt MUST be followed.
+
+#This txt serves as the template that will store the suggested code: 
+# DO NOT MODIFY THE TEXT IN THIS DOCUMENT OTHER THAN TO APPEND CODE TO IT
+#This test suite should have a logical flow and spaces + comments/docstrings to explain each piece of code
+
+#Rules:
+#You MUST NOT modify, delete, or reorder any existing text.
+#You MAY ONLY append new content to the end of the document.
+#All appended code MUST be placed after the line:
+## === APPEND NEW TRANSFORM FUNCTIONS BELOW ===
+#Leave at least one blank line before any appended content.
+#Preserve all existing comments and spacing exactly as-is.
+
+#Do NOT:
+#- Refactor existing code
+#- Rename variables defined earlier
+#- Inline transformations into existing functions
+#- Remove comments or docstrings
+#- Assume execution order
+
+#Formatting requirements:
+#Leave two blank lines between each appended function
+#Leave one blank line between comments and code
+#Do not remove existing blank lines
+
+#Appended content MUST consist only of standalone function definitions.
+#Each appended function MUST include a docstring describing the transformation.
+#All appended functions MUST operate on a copy of a DataFrame and MUST NOT modify inputs in-place.
+#Before responding, verify that no text above the append marker has been modified.
+
+# === APPEND NEW TRANSFORM FUNCTIONS BELOW ===
+
+
+def parse_salary_estimate(df):
+    """
+    Parse the 'Salary Estimate' column to extract numeric minimum, maximum,
+    and average salary values. The original column is retained for reference.
+    """
     df_out = df.copy()
     change_log = []
 
-    # Convert 'Salary Estimate' column to numeric values
-    df_out['Salary Estimate'] = df_out['Salary Estimate'].str.replace('$', '').str.replace(',', '').astype(float)
-    change_log.append("Converted 'Salary Estimate' column to numeric values")
+    # Helper function to clean individual salary strings
+    def _extract_salary(s):
+        """
+        Extract min and max salary from a string like "$70K-$90K (Employer est.)".
+        Returns (min_salary, max_salary) as floats in thousands.
+        """
+        if not isinstance(s, str):
+            return (None, None)
+        # Remove any text in parentheses and whitespace
+        s_clean = s.split('(')[0].strip()
+        # Remove currency symbols and commas
+        s_clean = s_clean.replace('$', '').replace('K', '').replace(',', '')
+        # Split on hyphen
+        parts = s_clean.split('-')
+        if len(parts) == 2:
+            try:
+                min_sal = float(parts[0])
+                max_sal = float(parts[1])
+                return (min_sal, max_sal)
+            except ValueError:
+                return (None, None)
+        else:
+            # Single value case
+            try:
+                val = float(parts[0])
+                return (val, val)
+            except ValueError:
+                return (None, None)
+
+    # Apply extraction
+    salary_vals = df_out['Salary Estimate'].apply(_extract_salary)
+    df_out['Salary_Min_K'] = salary_vals.apply(lambda x: x[0])
+    df_out['Salary_Max_K'] = salary_vals.apply(lambda x: x[1])
+    df_out['Salary_Avg_K'] = df_out[['Salary_Min_K', 'Salary_Max_K']].mean(axis=1)
+
+    change_log.append(
+        "Parsed 'Salary Estimate' into numeric columns: Salary_Min_K, Salary_Max_K, Salary_Avg_K."
+    )
 
     return df_out, change_log
 
 
- 
-
-def extract_location_city_state(df):
+def clean_rating(df):
+    """
+    Ensure the 'Rating' column is numeric and cap values to a realistic range (0‑5).
+    Non‑numeric or out‑of‑range entries are set to NaN.
+    """
     df_out = df.copy()
     change_log = []
 
-    # Extract city and state from 'Location' column
-    df_out['City'] = df_out['Location'].str.split(',').str[0]
-    df_out['State'] = df_out['Location'].str.split(',').str[1]
-    change_log.append("Extracted city and state from 'Location' column")
+    # Convert to numeric, coercing errors to NaN
+    df_out['Rating'] = pd.to_numeric(df_out['Rating'], errors='coerce')
+
+    # Cap ratings between 0 and 5
+    before_invalid = df_out['Rating'].isna().sum()
+    df_out.loc[(df_out['Rating'] < 0) | (df_out['Rating'] > 5), 'Rating'] = pd.NA
+
+    after_invalid = df_out['Rating'].isna().sum()
+    change_log.append(
+        f"Converted 'Rating' to numeric and capped to [0,5]; "
+        f"{after_invalid - before_invalid} values set to NaN."
+    )
 
     return df_out, change_log
 
 
- 
-
-def encode_size_column(df):
+def compute_company_age(df, reference_year=None):
+    """
+    Create a 'Company_Age' column based on the 'Founded' year.
+    Handles unrealistic years and missing values.
+    """
     df_out = df.copy()
     change_log = []
 
-    # Encode 'Size' column using one-hot encoding
-    size_dummies = pd.get_dummies(df_out['Size'])
-    df_out = pd.concat([df_out, size_dummies], axis=1)
-    df_out = df_out.drop('Size', axis=1)
-    change_log.append("Encoded 'Size' column using one-hot encoding")
+    # Determine reference year (current year if not provided)
+    if reference_year is None:
+        reference_year = pd.Timestamp.now().year
+
+    # Convert 'Founded' to numeric, coerce errors
+    df_out['Founded'] = pd.to_numeric(df_out['Founded'], errors='coerce')
+
+    # Identify unrealistic years (e.g., future years, very early years before 1800)
+    unrealistic_mask = (df_out['Founded'] > reference_year) | (df_out['Founded'] < 1800)
+    num_unrealistic = unrealistic_mask.sum()
+
+    # Set unrealistic years to NaN
+    df_out.loc[unrealistic_mask, 'Founded'] = pd.NA
+
+    # Compute age
+    df_out['Company_Age'] = reference_year - df_out['Founded']
+
+    change_log.append(
+        f"Created 'Company_Age' from 'Founded'; {num_unrealistic} unrealistic years set to NaN."
+    )
 
     return df_out, change_log
 
 
- 
+===== REASONING =====
+#Use this file to store the function name for each piece of generated code,
+#and the reasoning for why each piece of transformative code was written/produced the way it was
 
-def handle_outliers_in_rating_column(df):
-    df_out = df.copy()
-    change_log = []
+# === APPEND REASONING BELOW ===
 
-    # Handle outliers in 'Rating' column by replacing values greater than 5 with 5
-    df_out['Rating'] = df_out['Rating'].apply(lambda x: 5 if x > 5 else x)
-    change_log.append("Handled outliers in 'Rating' column by replacing values greater than 5 with 5")
+parse_salary_estimate:
+- The dataset contains a 'Salary Estimate' column with values like "$70K-$90K (Employer est.)".
+- For modeling and analysis we need numeric representations of salary.
+- The function extracts minimum and maximum salary (in thousands) and computes an average.
+- It retains the original column for reference and logs the transformation.
 
-    return df_out, change_log
+clean_rating:
+- 'Rating' should be a numeric field between 0 and 5 (typical Glassdoor rating scale).
+- The raw data may contain non‑numeric strings or out‑of‑range numbers.
+- The function coerces the column to numeric, caps values to the valid range, and records how many entries become NaN.
 
-
- 
-
-def extract_year_from_founded_column(df):
-    df_out = df.copy()
-    change_log = []
-
-    # Extract year from 'Founded' column
-    df_out['Year Founded'] = df_out['Founded'].astype(str).str[-4:]
-    change_log.append("Extracted year from 'Founded' column")
-
-    return df_out, change_log
+compute_company_age:
+- The 'Founded' column holds the year a company was established.
+- To use company age as a feature we compute the difference between the current year and the founded year.
+- The function handles missing or unrealistic years (future years, years before 1800) by setting them to NaN before calculating age.
+- It logs the number of corrected entries and adds a new 'Company_Age' column.

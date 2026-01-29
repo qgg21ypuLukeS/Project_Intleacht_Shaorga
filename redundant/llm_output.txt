@@ -1,0 +1,111 @@
+===== FUNC_TEST_SUITE =====
+# Identity
+
+You are can expert python developer that helps generate suggested transformation code for a supplied pandas dataframe that is:
+- Pandas-native
+- Non-destructive by default
+- Human-readable and reviewable
+
+
+The contents of func_test_suite.txt are the SINGLE authoritative source of truth.
+All other instructions are subordinate to it.
+If any instruction conflicts with func_test_suite.txt, func_test_suite.txt MUST be followed.
+
+#This txt serves as the template that will store the suggested code: 
+# DO NOT MODIFY THE TEXT IN THIS DOCUMENT OTHER THAN TO APPEND CODE TO IT
+#This test suite should have a logical flow and spaces + comments/docstrings to explain each piece of code
+
+#Rules:
+#You MUST NOT modify, delete, or reorder any existing text.
+#You MAY ONLY append new content to the end of the document.
+#All appended code MUST be placed after the line:
+## === APPEND NEW TRANSFORM FUNCTIONS BELOW ===
+#Leave at least one blank line before any appended content.
+#Preserve all existing comments and spacing exactly as-is.
+
+#Do NOT:
+#- Refactor existing code
+#- Rename variables defined earlier
+#- Inline transformations into existing functions
+#- Remove comments or docstrings
+#- Assume execution order
+
+#Formatting requirements:
+#Leave two blank lines between each appended function
+#Leave one blank line between comments and code
+#Do not remove existing blank lines
+
+#Appended content MUST consist only of standalone function definitions.
+#Each appended function MUST include a docstring describing the transformation.
+#All appended functions MUST operate on a copy of a DataFrame and MUST NOT modify inputs in-place.
+#Before responding, verify that no text above the append marker has been modified.
+
+# === APPEND NEW TRANSFORM FUNCTIONS BELOW ===
+
+
+def convert_salary_estimate_to_float(df):
+    """
+    Convert the 'Salary Estimate' column to float type.
+    
+    This transformation is necessary because the 'Salary Estimate' column is currently of object type, 
+    which may cause issues with numerical operations.
+    """
+    df_out = df.copy()
+    change_log = []
+    
+    df_out['Salary Estimate'] = df_out['Salary Estimate'].str.replace('$', '').str.replace(',', '').astype(float)
+    change_log.append("Converted 'Salary Estimate' column to float type")
+    
+    return df_out, change_log
+
+
+def convert_rating_to_int(df):
+    """
+    Convert the 'Rating' column to int type.
+    
+    This transformation is necessary because the 'Rating' column is currently of float type, 
+    but it seems to contain integer values.
+    """
+    df_out = df.copy()
+    change_log = []
+    
+    df_out['Rating'] = df_out['Rating'].astype(int)
+    change_log.append("Converted 'Rating' column to int type")
+    
+    return df_out, change_log
+
+
+def convert_founded_to_int(df):
+    """
+    Convert the 'Founded' column to int type.
+    
+    This transformation is necessary because the 'Founded' column is currently of int type, 
+    but it may contain non-integer values.
+    """
+    df_out = df.copy()
+    change_log = []
+    
+    df_out['Founded'] = df_out['Founded'].astype(int)
+    change_log.append("Converted 'Founded' column to int type")
+    
+    return df_out, change_log
+
+
+===== REASONING =====
+#Use this file to store the function name for each piece of generated code,
+#and the reasoning for why each piece of transformative code was written/produced the way it was
+
+# === APPEND REASONING BELOW ===
+
+The function convert_salary_estimate_to_float was written to convert the 'Salary Estimate' column to float type. 
+This is necessary because the column currently contains string values with dollar signs and commas, 
+which would cause issues with numerical operations.
+
+The function convert_rating_to_int was written to convert the 'Rating' column to int type. 
+This is necessary because the column currently contains float values, but it seems to contain integer values.
+
+The function convert_founded_to_int was written to convert the 'Founded' column to int type. 
+This is necessary because the column currently contains int values, but it may contain non-integer values. 
+
+These transformations are necessary to ensure that the data is in a suitable format for analysis and modeling. 
+They are also non-destructive, meaning that they do not modify the original DataFrame, but instead return a new DataFrame with the transformations applied.
