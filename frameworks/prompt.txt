@@ -46,6 +46,8 @@ You MUST MAKE ZERO MISTAKES
 You MUST 'think' twice about each piece of code generated
 
 You MUST ensure that you also fill the reasoning.txt with the reasons behind each suggested code chunk
+Text above the append marker in reasoning.txt is IMMUTABLE.
+Text below the append marker is WRITABLE.
 
     {reasoning}
 

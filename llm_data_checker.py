@@ -147,6 +147,7 @@ def df_checker(data: pd.DataFrame) -> dict:
 
 #anonymise data for security purposes
 #DO NOT SEND SENSITIVE DATA INTO AN LLM EVER! I AM NOT LIABLE IF YOU DO THAT!
+#WIP 
 
 def data_anon(data):
     return data
