@@ -5,7 +5,9 @@
 import pandas as pd
 import pathlib 
 from io import StringIO
-
+import numpy as np
+import re
+import hashlib
 
 
 ########################
@@ -78,7 +80,7 @@ def df_checker(data):
 from io import StringIO
 import pandas as pd
 import numpy as np
-
+'''
 def df_checker(data: pd.DataFrame) -> dict:
     # --- basic shape / columns ---
     shape = data.shape
@@ -206,10 +208,7 @@ def df_checker(data: pd.DataFrame) -> dict:
 #anonymise data for security purposes
 #DO NOT SEND SENSITIVE DATA INTO AN LLM EVER! I AM NOT LIABLE IF YOU DO THAT!
 #WIP 
-
-def data_anon(data):
-    return data
-
+'''
 
 ########################
 #Data Processing Prompt + Constraints
@@ -228,3 +227,274 @@ def data_anon(data):
 ########################
 #API Client call
 ########################
+
+
+########################
+#Main function to call
+########################
+import pandas as pd
+import numpy as np
+import re
+import hashlib
+
+
+
+
+def get_structure_pattern(val):
+    """
+    Extract structural characteristics without exposing content.
+    
+    This reveals FORMAT issues without revealing DATA.
+    """
+    if pd.isna(val):
+        return None
+    
+    val_str = str(val)
+    
+    # Create a structure representation
+    structure = []
+    i = 0
+    while i < len(val_str):
+        char = val_str[i]
+        if char.isalpha():
+            # Count consecutive letters
+            count = 1
+            while i + count < len(val_str) and val_str[i + count].isalpha():
+                count += 1
+            structure.append(f"ALPHA({count})")
+            i += count
+        elif char.isdigit():
+            # Count consecutive digits
+            count = 1
+            while i + count < len(val_str) and val_str[i + count].isdigit():
+                count += 1
+            structure.append(f"DIGIT({count})")
+            i += count
+        elif char in ['\n', '\t', '\r']:
+            structure.append(f"NEWLINE" if char == '\n' else "TAB" if char == '\t' else "RETURN")
+            i += 1
+        elif char == ' ':
+            structure.append("SPACE")
+            i += 1
+        else:
+            structure.append(f"'{char}'")
+            i += 1
+    
+    return '-'.join(structure[:20])  # Limit length
+
+
+def df_checker(data: pd.DataFrame, sample_size: int = 5) -> dict:
+    """
+    Analyze data quality without exposing sensitive content.
+    
+    This function detects format issues while maintaining privacy by:
+    1. Showing STRUCTURE, not content
+    2. Detecting patterns algorithmically
+    3. Using anonymized examples only when necessary
+    """
+    
+    shape = data.shape
+    col_names = data.columns.tolist()
+    dtype_counts = data.dtypes.value_counts().to_dict()
+    numeric_cols = data.select_dtypes(include="number").columns.tolist()
+    cat_cols = data.select_dtypes(include="object").columns.tolist()
+    
+    # Missing values
+    per_null = data.isna().mean() * 100
+    cols_high_missing = per_null[per_null > 10].round(2).to_dict()
+    
+    # === CATEGORICAL COLUMNS (PRIVACY-PRESERVING) ===
+    cat_summary = {}
+    
+    for col in cat_cols:
+        col_data = data[col].dropna().astype(str)
+        if col_data.empty:
+            continue
+        
+        nunique = data[col].nunique(dropna=True)
+        
+        # PRIVACY: Don't show actual values, show STRUCTURE
+        # Instead of: ['Healthfirst\n3.1', 'ManTech\n4.2']
+        # Show: ['ALPHA(11)-NEWLINE-DIGIT(1)-'.'-DIGIT(1)', ...]
+        
+        structure_samples = [
+            get_structure_pattern(val) 
+            for val in col_data.head(sample_size)
+        ]
+        
+        # CRITICAL DETECTION: Embedded data (without exposing content)
+        has_newlines = col_data.str.contains('\n', na=False).sum()
+        has_tabs = col_data.str.contains('\t', na=False).sum()
+        has_pipes = col_data.str.contains(r'\|', na=False).sum()
+        has_semicolons = col_data.str.contains(';', na=False).sum()
+        
+        # Format detection (algorithmic - no content exposure)
+        format_analysis = {
+            "has_email_format": col_data.str.contains(r'[\w\.-]+@[\w\.-]+', na=False).sum(),
+            "has_url_format": col_data.str.contains(r'https?://', na=False).sum(),
+            "has_phone_format": col_data.str.contains(r'\d{3}[-.]?\d{3}[-.]?\d{4}', na=False).sum(),
+            "has_date_format": col_data.str.contains(r'\d{4}[-/]\d{2}[-/]\d{2}', na=False).sum(),
+            "has_currency_range": col_data.str.contains(r'\$\d+[KMB]?-\$\d+[KMB]?', na=False, regex=True).sum(),
+            "has_number_range": col_data.str.contains(r'\d+-\d+', na=False).sum(),
+            "has_comma_list": (col_data.str.count(',') > 1).sum(),
+        }
+        
+        # Only include detected formats
+        detected_formats = {k: v for k, v in format_analysis.items() if v > 0}
+        
+        # String length analysis
+        str_lengths = col_data.str.len()
+        
+        # Character composition (reveals embedded data without showing it)
+        char_analysis = {
+            "avg_length": round(float(str_lengths.mean()), 1),
+            "max_length": int(str_lengths.max()),
+            "contains_digits_pct": round((col_data.str.contains(r'\d', na=False).sum() / len(col_data) * 100), 1),
+            "contains_special_pct": round((col_data.str.contains(r'[^a-zA-Z0-9\s]', na=False).sum() / len(col_data) * 100), 1),
+        }
+        
+        # Missing value indicators (no privacy concerns)
+        missing_indicators = {
+            "-1": int((data[col] == "-1").sum()),
+            "Unknown": int((data[col] == "Unknown").sum()),
+            "N/A": int((data[col] == "N/A").sum()),
+            "null": int((data[col] == "null").sum()),
+        }
+        missing_indicators = {k: v for k, v in missing_indicators.items() if v > 0}
+        
+        cat_summary[col] = {
+            "unique_count": int(nunique),
+            "high_cardinality": bool(nunique > 50),
+            
+            # PRIVACY: Structure, not content
+            "value_structure_examples": structure_samples,
+            
+            # CRITICAL: Embedded data detection (no content exposure)
+            "embedded_data_signals": {
+                "newlines": int(has_newlines),
+                "tabs": int(has_tabs),
+                "pipes": int(has_pipes),
+                "semicolons": int(has_semicolons),
+            },
+            
+            # Character composition analysis
+            "character_analysis": char_analysis,
+            
+            # Detected formats
+            "detected_formats": detected_formats,
+            
+            # Missing indicators
+            "missing_indicators": missing_indicators,
+        }
+    
+    # === NUMERIC COLUMNS (PRIVACY-PRESERVING) ===
+    num_summary = {}
+    
+    for col in numeric_cols:
+        series = data[col].dropna()
+        if series.empty:
+            continue
+        
+        # Negative value detection (no privacy concerns)
+        negative_count = int((data[col] < 0).sum())
+        actual_min = float(series.min())
+        actual_max = float(series.max())
+        
+        # Discreteness check
+        is_discrete = series.nunique() < 20
+        
+        # PRIVACY: Don't show actual values, show DISTRIBUTION
+        # Instead of: [3.1, 4.2, 3.8, ...]
+        # Show: statistical summary only
+        
+        num_summary[col] = {
+            "range": {
+                "min": actual_min,
+                "max": actual_max,
+                "mean": round(float(series.mean()), 2),
+                "std": round(float(series.std()), 2),
+            },
+            
+            # CRITICAL: Negative values (missing indicators)
+            "negative_values": {
+                "count": negative_count,
+                "percentage": round(negative_count / len(data) * 100, 2),
+                "likely_missing_indicator": bool(negative_count > 0 and actual_min == -1),
+            },
+            
+            # Discreteness
+            "potentially_categorical": bool(is_discrete),
+            "unique_count": int(series.nunique()),
+            
+            # PRIVACY: No actual values shown
+            "value_distribution": "See range and stats above"
+        }
+    
+    # === CRITICAL ISSUES SUMMARY ===
+    critical_issues = []
+    
+    for col in cat_cols:
+        if col in cat_summary:
+            # Flag embedded newlines
+            if cat_summary[col]["embedded_data_signals"]["newlines"] > len(data) * 0.5:
+                critical_issues.append({
+                    "column": col,
+                    "issue": "embedded_newlines",
+                    "severity": "CRITICAL",
+                    "description": f"{cat_summary[col]['embedded_data_signals']['newlines']} values ({cat_summary[col]['embedded_data_signals']['newlines']/len(data)*100:.1f}%) contain newlines",
+                    "explanation": "This suggests multiple fields are concatenated in one column",
+                    "example_structure": cat_summary[col]["value_structure_examples"][0] if cat_summary[col]["value_structure_examples"] else None,
+                })
+            
+            # Flag range formats
+            if "has_currency_range" in cat_summary[col]["detected_formats"]:
+                count = cat_summary[col]["detected_formats"]["has_currency_range"]
+                if count > len(data) * 0.5:
+                    critical_issues.append({
+                        "column": col,
+                        "issue": "range_format",
+                        "severity": "HIGH",
+                        "description": f"{count} values ({count/len(data)*100:.1f}%) contain range format (e.g., $X-$Y)",
+                        "explanation": "Cannot be directly converted to numeric - needs parsing into min/max",
+                        "example_structure": "Format: $DIGIT-$DIGIT (estimated pattern)",
+                    })
+            
+            # Flag comma-separated lists
+            if "has_comma_list" in cat_summary[col]["detected_formats"]:
+                count = cat_summary[col]["detected_formats"]["has_comma_list"]
+                if count > len(data) * 0.3:
+                    critical_issues.append({
+                        "column": col,
+                        "issue": "comma_separated_list",
+                        "severity": "MEDIUM",
+                        "description": f"{count} values contain multiple commas (likely lists)",
+                        "explanation": "May need to be split into separate records or list column",
+                    })
+    
+    for col in numeric_cols:
+        if col in num_summary:
+            # Flag negative values as missing indicators
+            if num_summary[col]["negative_values"]["likely_missing_indicator"]:
+                critical_issues.append({
+                    "column": col,
+                    "issue": "negative_missing_indicator",
+                    "severity": "HIGH",
+                    "description": f"{num_summary[col]['negative_values']['count']} negative values (min={num_summary[col]['range']['min']})",
+                    "explanation": "Negative values (especially -1) likely represent missing data, not valid measurements",
+                })
+    
+    return {
+        "shape": shape,
+        "column_names": col_names,
+        "dtype_counts": dtype_counts,
+        "missing_values": {
+            "columns_high_missing_pct": cols_high_missing,
+        },
+        "categorical_summary": cat_summary,
+        "numeric_summary": num_summary,
+        "critical_issues": critical_issues,
+        
+        
+        "privacy_note": "This analysis reveals data structure and format patterns without exposing actual content."
+    }
+

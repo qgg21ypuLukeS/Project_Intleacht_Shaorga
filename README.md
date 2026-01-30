@@ -28,10 +28,11 @@ Given a DataFrame, the system will:
 
 1. **Inspect the data** for common structural and quality issues
 
-   * Missing values (`NaN` / `None`)
-   * Descriptive Statistics
-   * Grab the column names
-   * Use the data to make spoof data
+   * Dataset shape and dimensionality
+   * Column names and data types
+   * Missing value patterns
+   * Descriptive statistics and distributions
+   * Structural and format characteristics (e.g. ranges, delimiters, embedded newlines)
 
 2. **Generate suggested transformation code**
 
@@ -49,6 +50,24 @@ Given a DataFrame, the system will:
    * Optional additional cleaning steps
    * Potential downstream transformations
    * Data consistency or schema ideas
+
+---
+
+### Privacy Model
+
+This system **does not send raw data values** to the LLM.
+
+Instead, it extracts and transmits **descriptive metadata only**, such as:
+
+* Dataset shape and schema
+* Column-level data types
+* Missingness patterns
+* Statistical summaries (e.g. counts, ranges, distributions)
+* Structural and format signals (without exposing content)
+
+No actual cell values, identifiers, or sensitive strings are included in the prompt.
+
+This design ensures that the LLM can reason about **structure and quality** without ever seeing real data.
 
 ---
 
